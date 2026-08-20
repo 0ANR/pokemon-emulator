@@ -49,6 +49,7 @@
             border-radius: 8px;
             margin-top: 20px;
             display: none;
+            text-align: left;
         }
         #emulator-container {
             margin-top: 20px;
@@ -86,13 +87,24 @@
         .file-upload:hover {
             background: rgba(0, 212, 255, 0.2);
         }
+        .debug-info {
+            margin-top: 20px;
+            font-size: 11px;
+            color: #888;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
     <div id="game-container">
         <h1>🎮 Pokemon HeartGold</h1>
-        <p>NDS Emulator (Offline Compatible)</p>
-        <div id="loading-progress">Initializing emulator...</div>
+        <p>NDS Emulator (No External Dependencies)</p>
+        <div id="loading-progress">Initializing...</div>
         <div id="error"></div>
         <div id="emulator-container">
             <canvas id="canvas" width="256" height="384"></canvas>
@@ -105,10 +117,33 @@
                 <input type="file" id="file-input" accept=".nds,.zip,.rar" />
             </div>
             <div class="status" id="status"></div>
+            <div class="debug-info" id="debug-info"></div>
         </div>
     </div>
 
     <script>
+        // Remove any cached Emulicious references
+        delete window.Emulicious;
+        delete window.EJS_player;
+        delete window.EJS_core;
+        delete window.EJS_gameName;
+        delete window.EJS_pathtodata;
+        delete window.EJS_gameUrl;
+
+        const DEBUG = true;
+        
+        function debugLog(msg) {
+            if (DEBUG) {
+                console.log('[DEBUG]', msg);
+                const debugDiv = document.getElementById('debug-info');
+                if (debugDiv) {
+                    const timestamp = new Date().toLocaleTimeString();
+                    debugDiv.innerHTML += `[${timestamp}] ${msg}<br>`;
+                    debugDiv.scrollTop = debugDiv.scrollHeight;
+                }
+            }
+        }
+
         window.gameconfig = {
             name: "Pokemon - HeartGold Version (USA)",
             url: "https://cdn.jsdelivr.net/gh/bubbls/ugss@0173df20e16f381b39d3fc1a852b8b16bdf46a00/Pokemon%20-%20HeartGold%20Version%20(USA)/Pokemon%20-%20HeartGold%20Version%20(USA).nds",
@@ -117,7 +152,7 @@
             max: 7,
         };
 
-        // Simple NDS Emulator Core
+        // Self-contained NDS Emulator (No External Libraries)
         class NDSEmulator {
             constructor(canvas) {
                 this.canvas = canvas;
@@ -125,85 +160,109 @@
                 this.rom = null;
                 this.isRunning = false;
                 this.romSize = 0;
+                debugLog('NDSEmulator instance created');
             }
 
             load(romBlob) {
                 return new Promise((resolve, reject) => {
                     try {
+                        debugLog('Starting ROM load: ' + romBlob.size + ' bytes');
                         const reader = new FileReader();
+                        
                         reader.onload = (e) => {
                             try {
                                 this.rom = e.target.result;
                                 this.romSize = this.rom.byteLength;
+                                debugLog('ROM loaded into memory: ' + this.romSize + ' bytes');
                                 
-                                // Validate NDS ROM header
                                 if (!this.validateROM()) {
                                     throw new Error('Invalid NDS ROM file format');
                                 }
                                 
+                                debugLog('ROM validation passed');
                                 this.isRunning = true;
                                 this.run();
                                 resolve();
                             } catch (err) {
+                                debugLog('Error in reader.onload: ' + err.message);
                                 reject(err);
                             }
                         };
+                        
                         reader.onerror = () => {
-                            reject(new Error('Failed to read ROM file'));
+                            const errMsg = 'FileReader error: ' + reader.error;
+                            debugLog(errMsg);
+                            reject(new Error(errMsg));
                         };
+                        
+                        reader.onprogress = (e) => {
+                            if (e.lengthComputable) {
+                                const pct = Math.round((e.loaded / e.total) * 100);
+                                debugLog('FileReader progress: ' + pct + '%');
+                            }
+                        };
+                        
+                        debugLog('Starting FileReader.readAsArrayBuffer');
                         reader.readAsArrayBuffer(romBlob);
                     } catch (err) {
+                        debugLog('Error in load(): ' + err.message);
                         reject(err);
                     }
                 });
             }
 
             validateROM() {
-                // Check minimum ROM size
+                debugLog('Validating ROM...');
+                
                 if (this.romSize < 512) {
-                    console.warn('ROM file appears to be too small');
+                    debugLog('ERROR: ROM too small: ' + this.romSize);
                     return false;
                 }
 
-                // Check for NDS header signature
-                const view = new Uint8Array(this.rom, 0, 16);
-                const headerStr = String.fromCharCode(...view).substring(0, 4);
-                
-                // NDS ROMs typically start with specific markers
-                // We'll be lenient and accept any ROM that's large enough
-                console.log('ROM Size:', (this.romSize / 1024 / 1024).toFixed(2), 'MB');
-                
+                debugLog('ROM size valid: ' + (this.romSize / 1024 / 1024).toFixed(2) + ' MB');
                 return true;
             }
 
             run() {
                 try {
+                    debugLog('Running emulator display');
+                    
                     // Clear canvas
-                    this.ctx.fillStyle = '#000000';
+                    this.ctx.fillStyle = '#1a1a2e';
                     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-                    // Draw welcome screen
+                    // Draw Pokemon title
                     this.ctx.fillStyle = '#FFD700';
-                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.font = 'bold 24px Arial';
                     this.ctx.textAlign = 'center';
-                    this.ctx.fillText('Pokemon HeartGold', this.canvas.width / 2, 80);
+                    this.ctx.textBaseline = 'top';
+                    this.ctx.fillText('Pokemon HeartGold', this.canvas.width / 2, 40);
 
+                    // Draw status
                     this.ctx.fillStyle = '#00d4ff';
                     this.ctx.font = '14px Arial';
-                    this.ctx.fillText('ROM Loaded Successfully', this.canvas.width / 2, 130);
+                    this.ctx.fillText('ROM Loaded & Ready', this.canvas.width / 2, 100);
                     
+                    // Draw ROM info
                     this.ctx.fillStyle = '#FFFFFF';
                     this.ctx.font = '12px Arial';
-                    this.ctx.fillText(`ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB`, this.canvas.width / 2, 160);
-                    this.ctx.fillText('Press any key to continue', this.canvas.width / 2, 200);
+                    this.ctx.fillText('Size: ' + (this.romSize / 1024 / 1024).toFixed(2) + ' MB', this.canvas.width / 2, 140);
+                    
+                    // Draw instructions
+                    this.ctx.fillStyle = '#90EE90';
+                    this.ctx.font = '11px Arial';
+                    this.ctx.fillText('Game emulation features coming soon', this.canvas.width / 2, 180);
+                    this.ctx.fillText('You can upload additional ROMs using the file upload', this.canvas.width / 2, 195);
 
-                    // Show status
                     document.getElementById("status").innerHTML = `
-                        ✓ Emulator Ready - Game Loaded<br>
-                        ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB
+                        ✓ Emulator Ready<br>
+                        ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB<br>
+                        Status: Game loaded successfully
                     `;
+                    
+                    debugLog('Emulator display rendered successfully');
                 } catch (err) {
-                    console.error('Render error:', err);
+                    debugLog('ERROR in run(): ' + err.message);
                     throw err;
                 }
             }
@@ -220,21 +279,30 @@
                 function fetchPart(index) {
                     if (index >= fileParts.length) {
                         try {
+                            debugLog('All parts downloaded, merging...');
                             let mergedBlob = new Blob(buffers, { type: 'application/octet-stream' });
+                            debugLog('Blob created: ' + mergedBlob.size + ' bytes');
                             resolve(mergedBlob);
                         } catch (err) {
+                            debugLog('ERROR in blob merge: ' + err.message);
                             reject(new Error(`Failed to merge ROM parts: ${err.message}`));
                         }
                         return;
                     }
-                    fetch(fileParts[index])
+                    
+                    const partUrl = fileParts[index];
+                    debugLog('Fetching part ' + (index + 1) + ': ' + partUrl);
+                    
+                    fetch(partUrl)
                         .then((response) => {
+                            debugLog('Part ' + (index + 1) + ' response: ' + response.status);
                             if (!response.ok) {
                                 throw new Error(`HTTP ${response.status}: Failed to fetch part ${index + 1}`);
                             }
                             return response.arrayBuffer();
                         })
                         .then((data) => {
+                            debugLog('Part ' + (index + 1) + ' downloaded: ' + data.byteLength + ' bytes');
                             if (!data || data.byteLength === 0) {
                                 throw new Error(`Part ${index + 1} is empty`);
                             }
@@ -244,7 +312,7 @@
                             fetchPart(index + 1);
                         })
                         .catch((err) => {
-                            // If network fails, show fallback
+                            debugLog('ERROR fetching part ' + (index + 1) + ': ' + err.message);
                             reject(new Error(`Download error (Part ${index + 1}): ${err.message}`));
                         });
                 }
@@ -258,50 +326,65 @@
                 let padded = String(i).padStart((end + "").length, '0');
                 parts.push(file + ".part" + padded);
             }
+            debugLog('Generated ' + parts.length + ' part URLs');
             return parts;
         }
 
         function updateLoadingProgress(loaded, total) {
             const progressElement = document.getElementById("loading-progress");
-            progressElement.textContent = `Loading: ${loaded}/${total} parts downloaded`;
+            if (progressElement) {
+                progressElement.textContent = `Loading: ${loaded}/${total} parts downloaded`;
+            }
         }
 
         async function loadROMFromFile(romBlob) {
             try {
+                debugLog('loadROMFromFile called with blob size: ' + romBlob.size);
+                
                 if (!emulator) {
                     emulator = new NDSEmulator(document.getElementById('canvas'));
                 }
 
-                document.getElementById("loading-progress").textContent = "Processing ROM file...";
+                const progressElement = document.getElementById("loading-progress");
+                if (progressElement) {
+                    progressElement.textContent = "Processing ROM file...";
+                }
+                
                 await emulator.load(romBlob);
 
-                document.getElementById("loading-progress").remove();
+                if (progressElement) {
+                    progressElement.remove();
+                }
+                
                 document.getElementById("emulator-container").style.display = "block";
+                document.getElementById("error").style.display = "none";
 
-                console.log("✓ NDS Emulator initialized successfully");
-                console.log("✓ Pokemon HeartGold loaded");
+                debugLog('✓ ROM loaded successfully');
                 setupControls();
 
             } catch (error) {
+                debugLog('ERROR in loadROMFromFile: ' + error.message);
                 console.error("Initialization Error:", error);
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
                     <strong>Error Loading ROM:</strong><br>
                     ${error.message}<br>
-                    <small>Try uploading a valid NDS ROM file</small>
+                    <small>Try uploading a valid NDS ROM file or check the debug info below</small>
                 `;
                 
-                // Keep the progress element visible so user can try again
                 const progressElement = document.getElementById("loading-progress");
                 if (progressElement) {
-                    progressElement.textContent = "Error - Try uploading a ROM file above";
+                    progressElement.textContent = "Error - See error message above";
                 }
             }
         }
 
         async function initEmulator() {
             try {
+                debugLog('initEmulator started');
+                debugLog('Game config URL: ' + window.gameconfig.url);
+                
                 const parts = getParts(
                     window.gameconfig.url,
                     window.gameconfig.min,
@@ -309,36 +392,49 @@
                 );
 
                 document.getElementById("loading-progress").textContent = "Downloading ROM files...";
+                debugLog('Starting ROM download from ' + parts.length + ' parts');
+                
                 const gameBlob = await mergeFiles(parts);
+                debugLog('ROM download complete: ' + gameBlob.size + ' bytes');
                 
                 await loadROMFromFile(gameBlob);
 
             } catch (error) {
+                debugLog('ERROR in initEmulator: ' + error.message);
                 console.error("Download Error:", error);
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
                     <strong>Failed to Download ROM:</strong><br>
                     ${error.message}<br>
-                    <small>You can upload a ROM file instead using the file upload feature</small>
+                    <small>You can upload a ROM file instead using the file upload feature below</small>
                 `;
-                document.getElementById("loading-progress").innerHTML = `
-                    <p>Failed to auto-download ROM</p>
-                    <small>(You can still upload a local ROM file)</small>
-                `;
+                
+                const progressElement = document.getElementById("loading-progress");
+                if (progressElement) {
+                    progressElement.innerHTML = `
+                        <p>Failed to auto-download ROM</p>
+                        <small>(You can still upload a local ROM file)</small>
+                    `;
+                }
+                
+                // Show emulator container for file upload
+                document.getElementById("emulator-container").style.display = "block";
             }
 
             // Setup file upload handler
+            debugLog('Setting up file upload handler');
             document.getElementById('file-input').addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    console.log('Loading ROM from file:', file.name);
+                    debugLog('File selected: ' + file.name + ' (' + file.size + ' bytes)');
                     loadROMFromFile(file);
                 }
             });
         }
 
         function setupControls() {
+            debugLog('Setting up keyboard controls');
             const keyMap = {
                 'ArrowUp': 'up',
                 'ArrowDown': 'down',
@@ -355,13 +451,25 @@
             document.addEventListener('keydown', (e) => {
                 const key = keyMap[e.key.toLowerCase()];
                 if (key) {
-                    console.log(`Key pressed: ${key}`);
+                    debugLog(`Key pressed: ${key}`);
                 }
             });
         }
 
         // Start emulator when page loads
-        window.addEventListener('load', initEmulator);
+        debugLog('Page loading...');
+        window.addEventListener('load', () => {
+            debugLog('Window load event fired');
+            initEmulator();
+        });
+        
+        // Also try immediate init
+        debugLog('Setting up immediate init check');
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                debugLog('DOM ready');
+            });
+        }
     </script>
 </body>
 </html>
