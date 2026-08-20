@@ -18,25 +18,33 @@
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
         }
         #game-container {
             text-align: center;
             background: rgba(0, 0, 0, 0.3);
-            padding: 30px;
+            padding: 20px;
             border-radius: 15px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            max-width: 900px;
-            width: 90%;
+            max-width: 1000px;
+            width: 95%;
+            max-height: 95vh;
+            overflow-y: auto;
         }
         h1 {
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             color: #00d4ff;
             text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+            font-size: 24px;
+        }
+        p {
+            margin-bottom: 15px;
+            font-size: 14px;
         }
         #loading-progress {
-            font-size: 16px;
-            margin: 20px 0;
-            padding: 15px;
+            font-size: 14px;
+            margin: 15px 0;
+            padding: 12px;
             background: rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             display: inline-block;
@@ -45,67 +53,78 @@
         #error {
             color: #ff6b6b;
             background: rgba(255, 107, 107, 0.2);
-            padding: 15px;
+            padding: 12px;
             border-radius: 8px;
-            margin-top: 20px;
+            margin-top: 15px;
             display: none;
             text-align: left;
+            font-size: 13px;
         }
         #emulator-container {
-            margin-top: 20px;
+            margin-top: 15px;
             display: none;
         }
         #canvas {
             max-width: 100%;
+            width: auto;
+            height: auto;
             border: 3px solid #00d4ff;
             border-radius: 8px;
             box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
             background: #000;
             image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            display: block;
+            margin: 0 auto;
         }
         .controls {
-            margin-top: 20px;
-            font-size: 12px;
+            margin-top: 15px;
+            font-size: 11px;
             color: #ccc;
         }
         .status {
             margin-top: 10px;
-            font-size: 14px;
+            font-size: 12px;
             color: #00d4ff;
         }
         #file-input {
             display: none;
         }
         .file-upload {
-            margin-top: 20px;
-            padding: 15px;
+            margin-top: 15px;
+            padding: 12px;
             background: rgba(0, 212, 255, 0.1);
             border: 2px dashed #00d4ff;
             border-radius: 8px;
             cursor: pointer;
+            font-size: 13px;
         }
         .file-upload:hover {
             background: rgba(0, 212, 255, 0.2);
         }
+        .file-upload p {
+            margin: 0;
+        }
         .debug-info {
-            margin-top: 20px;
-            font-size: 11px;
+            margin-top: 15px;
+            font-size: 10px;
             color: #888;
             text-align: left;
             background: rgba(0, 0, 0, 0.2);
-            padding: 10px;
+            padding: 8px;
             border-radius: 5px;
-            max-height: 150px;
+            max-height: 120px;
             overflow-y: auto;
             font-family: monospace;
+            border: 1px solid rgba(0, 212, 255, 0.2);
         }
     </style>
 </head>
 <body>
     <div id="game-container">
         <h1>🎮 Pokemon Radical Red</h1>
-        <p>Game Boy Advance Emulator (RetroArch)</p>
-        <div id="loading-progress">Initializing RetroArch emulator...</div>
+        <p>Game Boy Advance Emulator</p>
+        <div id="loading-progress">Loading Emulators.js...</div>
         <div id="error"></div>
         <div id="emulator-container">
             <canvas id="canvas" width="240" height="160"></canvas>
@@ -122,9 +141,12 @@
         </div>
     </div>
 
+    <script src="https://js.emulators.lol/gba.js"></script>
+
     <script>
         const DEBUG = true;
         let emulator = null;
+        let EJS_INSTANCE = null;
         
         function debugLog(msg) {
             if (DEBUG) {
@@ -138,201 +160,136 @@
             }
         }
 
-        // RetroArch Emulator Wrapper
-        class RetroArchEmulator {
+        class EmulatorsJSWrapper {
             constructor(canvas) {
                 this.canvas = canvas;
-                this.ctx = canvas.getContext('2d');
-                this.Module = null;
                 this.isRunning = false;
-                debugLog('RetroArch Emulator instance created');
-            }
-
-            async initialize() {
-                return new Promise((resolve, reject) => {
-                    try {
-                        debugLog('Loading RetroArch WASM...');
-                        
-                        // Create a script element for RetroArch
-                        const script = document.createElement('script');
-                        script.async = true;
-                        script.src = 'https://cdn.jsdelivr.net/npm/retroarch@latest/retroarch.js';
-                        
-                        script.onload = () => {
-                            debugLog('RetroArch script loaded');
-                            if (typeof RetroArch !== 'undefined') {
-                                debugLog('RetroArch library available');
-                                resolve();
-                            } else {
-                                debugLog('RetroArch not available, trying alternative loader');
-                                this.loadAlternativeEmulator();
-                                resolve();
-                            }
-                        };
-                        
-                        script.onerror = () => {
-                            debugLog('Failed to load RetroArch from CDN, using local emulator');
-                            this.loadAlternativeEmulator();
-                            resolve();
-                        };
-                        
-                        document.head.appendChild(script);
-                    } catch (err) {
-                        debugLog('Error in initialize: ' + err.message);
-                        reject(err);
-                    }
-                });
-            }
-
-            loadAlternativeEmulator() {
-                // Load BrowserFS for file system support
-                debugLog('Loading alternative emulator stack...');
-                
-                // Create a simple local emulator instance
-                this.localEmulator = {
-                    running: false,
-                    rom: null,
-                    start: () => {
-                        this.localEmulator.running = true;
-                        debugLog('Local emulator engine started');
-                    }
-                };
+                this.rom = null;
+                debugLog('Emulators.js Wrapper initialized');
             }
 
             async load(romBlob) {
                 return new Promise((resolve, reject) => {
                     try {
-                        debugLog('Starting ROM load: ' + romBlob.size + ' bytes');
+                        debugLog('Loading ROM: ' + romBlob.size + ' bytes');
+                        
                         const reader = new FileReader();
                         
                         reader.onload = (e) => {
                             try {
-                                const romData = e.target.result;
-                                debugLog('ROM loaded into memory: ' + romData.byteLength + ' bytes');
+                                this.rom = e.target.result;
+                                debugLog('ROM read: ' + this.rom.byteLength + ' bytes');
                                 
-                                if (!this.validateROM(romData)) {
-                                    throw new Error('Invalid GBA ROM file format');
+                                if (!this.validateROM(this.rom)) {
+                                    throw new Error('Invalid GBA ROM');
                                 }
                                 
-                                debugLog('ROM validation passed');
-                                this.rom = romData;
-                                this.isRunning = true;
+                                debugLog('ROM validated');
                                 this.run();
                                 resolve();
                             } catch (err) {
-                                debugLog('Error in reader.onload: ' + err.message);
+                                debugLog('Error in onload: ' + err.message);
                                 reject(err);
                             }
                         };
                         
                         reader.onerror = () => {
-                            const errMsg = 'FileReader error: ' + reader.error;
-                            debugLog(errMsg);
-                            reject(new Error(errMsg));
+                            debugLog('FileReader error');
+                            reject(new Error('Failed to read file'));
                         };
                         
-                        debugLog('Starting FileReader.readAsArrayBuffer');
                         reader.readAsArrayBuffer(romBlob);
                     } catch (err) {
-                        debugLog('Error in load(): ' + err.message);
+                        debugLog('Error in load: ' + err.message);
                         reject(err);
                     }
                 });
             }
 
             validateROM(romData) {
-                debugLog('Validating GBA ROM...');
+                debugLog('Validating ROM...');
+                const size = romData.byteLength;
                 
-                if (romData.byteLength < 32 * 1024) {
-                    debugLog('ERROR: ROM too small: ' + romData.byteLength);
+                if (size < 32 * 1024) {
+                    debugLog('ERROR: ROM too small');
                     return false;
                 }
-
-                if (romData.byteLength > 64 * 1024 * 1024) {
-                    debugLog('ERROR: ROM too large: ' + romData.byteLength);
+                
+                if (size > 64 * 1024 * 1024) {
+                    debugLog('ERROR: ROM too large');
                     return false;
                 }
-
-                // Check GBA ROM header
-                const view = new Uint8Array(romData, 0, 4);
-                debugLog('ROM header bytes: ' + Array.from(view).map(b => b.toString(16)).join(' '));
                 
-                debugLog('GBA ROM size valid: ' + (romData.byteLength / 1024 / 1024).toFixed(2) + ' MB');
+                debugLog('ROM size valid: ' + (size / 1024 / 1024).toFixed(2) + ' MB');
                 return true;
             }
 
             run() {
                 try {
-                    debugLog('Rendering emulator display...');
+                    debugLog('Initializing Emulators.js...');
                     
-                    const ctx = this.ctx;
-                    ctx.fillStyle = '#1a1a2e';
-                    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-                    // Draw title
-                    ctx.fillStyle = '#FFD700';
-                    ctx.font = 'bold 14px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'top';
-                    ctx.fillText('Pokemon Radical Red', this.canvas.width / 2, 20);
-
-                    // Draw status
-                    ctx.fillStyle = '#00d4ff';
-                    ctx.font = '12px Arial';
-                    ctx.fillText('✓ GBA ROM Loaded', this.canvas.width / 2, 55);
-                    
-                    // Draw ROM info
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.font = '10px Arial';
-                    ctx.fillText('Size: ' + (this.rom.byteLength / 1024 / 1024).toFixed(2) + ' MB', this.canvas.width / 2, 75);
-                    
-                    // Draw instructions
-                    ctx.fillStyle = '#90EE90';
-                    ctx.font = '9px Arial';
-                    ctx.fillText('Game is ready!', this.canvas.width / 2, 95);
-                    ctx.fillText('Use keyboard controls to play', this.canvas.width / 2, 107);
-
-                    document.getElementById("status").innerHTML = `
-                        ✓ Emulator Ready<br>
-                        ROM Size: ${(this.rom.byteLength / 1024 / 1024).toFixed(2)} MB<br>
-                        Status: Pokemon Radical Red loaded and ready
-                    `;
-                    
-                    debugLog('✓ Emulator display rendered successfully');
-                    this.setupGameInput();
+                    if (typeof window.EJS_emulator === 'undefined') {
+                        debugLog('Creating new EJS_emulator instance');
+                        
+                        window.EJS_player = '#canvas';
+                        window.EJS_core = 'gba';
+                        window.EJS_pathtodata = 'https://js.emulators.lol/data/';
+                        
+                        // Convert ArrayBuffer to data URL
+                        const blob = new Blob([this.rom], { type: 'application/octet-stream' });
+                        const url = URL.createObjectURL(blob);
+                        window.EJS_gameUrl = url;
+                        
+                        debugLog('ROM blob URL created');
+                        
+                        // Initialize emulator
+                        EJS_INSTANCE = new window.EJS({
+                            element: document.getElementById('canvas'),
+                            gameUrl: url,
+                            core: 'gba'
+                        });
+                        
+                        debugLog('✓ EJS instance created and game loaded');
+                        
+                        document.getElementById("status").innerHTML = `
+                            ✓ Game Running<br>
+                            ROM: Pokemon Radical Red<br>
+                            Status: Ready to play
+                        `;
+                        
+                        this.setupControls();
+                    }
                 } catch (err) {
-                    debugLog('ERROR in run(): ' + err.message);
+                    debugLog('ERROR in run: ' + err.message);
                     throw err;
                 }
             }
 
-            setupGameInput() {
-                debugLog('Setting up game input handler');
+            setupControls() {
+                debugLog('Setting up controls');
                 
                 const keyMap = {
-                    'ArrowUp': 'up',
-                    'ArrowDown': 'down',
-                    'ArrowLeft': 'left',
-                    'ArrowRight': 'right',
-                    'z': 'b',
-                    'x': 'a',
-                    'a': 'l',
-                    's': 'r',
-                    'Enter': 'start',
-                    ' ': 'select'
+                    'ArrowUp': 'ArrowUp',
+                    'ArrowDown': 'ArrowDown',
+                    'ArrowLeft': 'ArrowLeft',
+                    'ArrowRight': 'ArrowRight',
+                    'z': 'z',
+                    'x': 'x',
+                    'a': 'a',
+                    's': 's',
+                    'Enter': 'Enter',
+                    ' ': ' '
                 };
-
+                
                 document.addEventListener('keydown', (e) => {
-                    const key = keyMap[e.key.toLowerCase()];
-                    if (key) {
-                        debugLog(`Input: ${key} pressed`);
+                    if (keyMap[e.key.toLowerCase()]) {
+                        debugLog('Key down: ' + e.key);
                     }
                 });
-
+                
                 document.addEventListener('keyup', (e) => {
-                    const key = keyMap[e.key.toLowerCase()];
-                    if (key) {
-                        debugLog(`Input: ${key} released`);
+                    if (keyMap[e.key.toLowerCase()]) {
+                        debugLog('Key up: ' + e.key);
                     }
                 });
             }
@@ -340,60 +297,68 @@
 
         async function loadROMFromFile(romBlob) {
             try {
-                debugLog('loadROMFromFile called with blob size: ' + romBlob.size);
+                debugLog('Load ROM from file: ' + romBlob.name + ' (' + romBlob.size + ' bytes)');
                 
                 if (!emulator) {
-                    emulator = new RetroArchEmulator(document.getElementById('canvas'));
+                    emulator = new EmulatorsJSWrapper(document.getElementById('canvas'));
                 }
 
                 const progressElement = document.getElementById("loading-progress");
                 if (progressElement) {
-                    progressElement.textContent = "Processing GBA ROM file...";
+                    progressElement.textContent = "Processing ROM file...";
                 }
                 
                 await emulator.load(romBlob);
 
                 if (progressElement) {
-                    progressElement.remove();
+                    progressElement.textContent = "Game Loaded!";
                 }
                 
                 document.getElementById("emulator-container").style.display = "block";
                 document.getElementById("error").style.display = "none";
 
-                debugLog('✓ ROM loaded and emulator ready');
+                debugLog('✓ ROM loaded successfully');
 
             } catch (error) {
-                debugLog('ERROR in loadROMFromFile: ' + error.message);
+                debugLog('ERROR: ' + error.message);
                 console.error("Error:", error);
+                
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
                     <strong>Error Loading ROM:</strong><br>
                     ${error.message}<br>
-                    <small>Make sure you're loading a valid GBA (.gba) ROM file</small>
+                    <small>Check debug logs below for more info</small>
                 `;
                 
                 const progressElement = document.getElementById("loading-progress");
                 if (progressElement) {
-                    progressElement.textContent = "Error - See error message above";
+                    progressElement.textContent = "Error loading ROM";
                 }
             }
         }
 
         async function initEmulator() {
             try {
-                debugLog('GBA Emulator initialization started');
+                debugLog('Initializing emulator...');
+                debugLog('Checking for Emulators.js...');
                 
-                if (!emulator) {
-                    emulator = new RetroArchEmulator(document.getElementById('canvas'));
+                // Wait for Emulators.js to load
+                let waitCount = 0;
+                while (typeof window.EJS === 'undefined' && waitCount < 100) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    waitCount++;
                 }
-
-                await emulator.initialize();
                 
-                debugLog('✓ Emulator initialized successfully');
+                if (typeof window.EJS === 'undefined') {
+                    debugLog('WARNING: Emulators.js failed to load from CDN');
+                    throw new Error('Emulators.js library failed to load');
+                }
+                
+                debugLog('✓ Emulators.js loaded successfully');
                 
                 document.getElementById("loading-progress").innerHTML = `
-                    <p>GBA Emulator Ready</p>
+                    <p>✓ Emulator Ready</p>
                     <small>Click below to load your Pokemon Radical Red (.gba) file</small>
                 `;
                 
@@ -404,9 +369,9 @@
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
-                    <strong>Emulator Initialization:</strong><br>
+                    <strong>Emulator Initialization Error:</strong><br>
                     ${error.message}<br>
-                    <small>You can still upload your GBA ROM file</small>
+                    <small>Try loading your GBA ROM file - emulator may load on first use</small>
                 `;
                 
                 document.getElementById("emulator-container").style.display = "block";
@@ -417,23 +382,23 @@
             document.getElementById('file-input').addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    debugLog('File selected: ' + file.name + ' (' + file.size + ' bytes)');
+                    debugLog('File selected: ' + file.name);
                     if (file.name.toLowerCase().endsWith('.gba')) {
                         loadROMFromFile(file);
                     } else {
-                        debugLog('ERROR: File is not a .gba ROM');
                         const errorDiv = document.getElementById("error");
                         errorDiv.style.display = "block";
                         errorDiv.innerHTML = 'Please select a valid .gba ROM file';
+                        debugLog('ERROR: Invalid file type: ' + file.name);
                     }
                 }
             });
         }
 
-        // Start emulator when page loads
+        // Initialize when page loads
         debugLog('Page loading...');
         window.addEventListener('load', () => {
-            debugLog('Window load event fired');
+            debugLog('DOMContentLoaded');
             initEmulator();
         });
     </script>
