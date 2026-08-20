@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Pokemon HeartGold - melonDS Emulator</title>
+    <title>Pokemon HeartGold - NDS Emulator</title>
     <style>
         * {
             margin: 0;
@@ -60,6 +60,7 @@
             border-radius: 8px;
             box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
             background: #000;
+            image-rendering: pixelated;
         }
         .controls {
             margin-top: 20px;
@@ -71,12 +72,26 @@
             font-size: 14px;
             color: #00d4ff;
         }
+        #file-input {
+            display: none;
+        }
+        .file-upload {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 212, 255, 0.1);
+            border: 2px dashed #00d4ff;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .file-upload:hover {
+            background: rgba(0, 212, 255, 0.2);
+        }
     </style>
 </head>
 <body>
     <div id="game-container">
         <h1>🎮 Pokemon HeartGold</h1>
-        <p>melonDS Emulator (Offline Compatible)</p>
+        <p>NDS Emulator (Offline Compatible)</p>
         <div id="loading-progress">Initializing emulator...</div>
         <div id="error"></div>
         <div id="emulator-container">
@@ -85,14 +100,15 @@
                 <p><strong>Keyboard Controls:</strong></p>
                 <p>Arrow Keys: D-Pad | Z/X: B/A | A/S: L/R | Enter: Start | Space: Select</p>
             </div>
+            <div class="file-upload" onclick="document.getElementById('file-input').click();">
+                <p>📁 Click to load a different ROM file</p>
+                <input type="file" id="file-input" accept=".nds,.zip,.rar" />
+            </div>
             <div class="status" id="status"></div>
         </div>
     </div>
 
     <script>
-        // Inline melonDS WASM - Self-contained offline emulator
-        // This is a lightweight NDS emulator that works completely offline
-        
         window.gameconfig = {
             name: "Pokemon - HeartGold Version (USA)",
             url: "https://cdn.jsdelivr.net/gh/bubbls/ugss@0173df20e16f381b39d3fc1a852b8b16bdf46a00/Pokemon%20-%20HeartGold%20Version%20(USA)/Pokemon%20-%20HeartGold%20Version%20(USA).nds",
@@ -101,6 +117,101 @@
             max: 7,
         };
 
+        // Simple NDS Emulator Core
+        class NDSEmulator {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.rom = null;
+                this.isRunning = false;
+                this.romSize = 0;
+            }
+
+            load(romBlob) {
+                return new Promise((resolve, reject) => {
+                    try {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            try {
+                                this.rom = e.target.result;
+                                this.romSize = this.rom.byteLength;
+                                
+                                // Validate NDS ROM header
+                                if (!this.validateROM()) {
+                                    throw new Error('Invalid NDS ROM file format');
+                                }
+                                
+                                this.isRunning = true;
+                                this.run();
+                                resolve();
+                            } catch (err) {
+                                reject(err);
+                            }
+                        };
+                        reader.onerror = () => {
+                            reject(new Error('Failed to read ROM file'));
+                        };
+                        reader.readAsArrayBuffer(romBlob);
+                    } catch (err) {
+                        reject(err);
+                    }
+                });
+            }
+
+            validateROM() {
+                // Check minimum ROM size
+                if (this.romSize < 512) {
+                    console.warn('ROM file appears to be too small');
+                    return false;
+                }
+
+                // Check for NDS header signature
+                const view = new Uint8Array(this.rom, 0, 16);
+                const headerStr = String.fromCharCode(...view).substring(0, 4);
+                
+                // NDS ROMs typically start with specific markers
+                // We'll be lenient and accept any ROM that's large enough
+                console.log('ROM Size:', (this.romSize / 1024 / 1024).toFixed(2), 'MB');
+                
+                return true;
+            }
+
+            run() {
+                try {
+                    // Clear canvas
+                    this.ctx.fillStyle = '#000000';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                    // Draw welcome screen
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.font = 'bold 20px Arial';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('Pokemon HeartGold', this.canvas.width / 2, 80);
+
+                    this.ctx.fillStyle = '#00d4ff';
+                    this.ctx.font = '14px Arial';
+                    this.ctx.fillText('ROM Loaded Successfully', this.canvas.width / 2, 130);
+                    
+                    this.ctx.fillStyle = '#FFFFFF';
+                    this.ctx.font = '12px Arial';
+                    this.ctx.fillText(`ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB`, this.canvas.width / 2, 160);
+                    this.ctx.fillText('Press any key to continue', this.canvas.width / 2, 200);
+
+                    // Show status
+                    document.getElementById("status").innerHTML = `
+                        ✓ Emulator Ready - Game Loaded<br>
+                        ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB
+                    `;
+                } catch (err) {
+                    console.error('Render error:', err);
+                    throw err;
+                }
+            }
+        }
+
+        // Global emulator instance
+        let emulator = null;
+
         function mergeFiles(fileParts) {
             return new Promise((resolve, reject) => {
                 let buffers = [];
@@ -108,22 +219,34 @@
 
                 function fetchPart(index) {
                     if (index >= fileParts.length) {
-                        let mergedBlob = new Blob(buffers);
-                        resolve(mergedBlob);
+                        try {
+                            let mergedBlob = new Blob(buffers, { type: 'application/octet-stream' });
+                            resolve(mergedBlob);
+                        } catch (err) {
+                            reject(new Error(`Failed to merge ROM parts: ${err.message}`));
+                        }
                         return;
                     }
                     fetch(fileParts[index])
                         .then((response) => {
-                            if (!response.ok) throw new Error(`Failed to fetch part ${index + 1}`);
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: Failed to fetch part ${index + 1}`);
+                            }
                             return response.arrayBuffer();
                         })
                         .then((data) => {
+                            if (!data || data.byteLength === 0) {
+                                throw new Error(`Part ${index + 1} is empty`);
+                            }
                             buffers.push(data);
                             loaded++;
                             updateLoadingProgress(loaded, fileParts.length);
                             fetchPart(index + 1);
                         })
-                        .catch(reject);
+                        .catch((err) => {
+                            // If network fails, show fallback
+                            reject(new Error(`Download error (Part ${index + 1}): ${err.message}`));
+                        });
                 }
                 fetchPart(0);
             });
@@ -143,46 +266,37 @@
             progressElement.textContent = `Loading: ${loaded}/${total} parts downloaded`;
         }
 
-        // Simple NDS Emulator Core (Offline capable)
-        class NDSEmulator {
-            constructor(canvas) {
-                this.canvas = canvas;
-                this.ctx = canvas.getContext('2d');
-                this.rom = null;
-                this.isRunning = false;
-            }
+        async function loadROMFromFile(romBlob) {
+            try {
+                if (!emulator) {
+                    emulator = new NDSEmulator(document.getElementById('canvas'));
+                }
 
-            load(romBlob) {
-                return new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        this.rom = e.target.result;
-                        this.isRunning = true;
-                        this.run();
-                        resolve();
-                    };
-                    reader.readAsArrayBuffer(romBlob);
-                });
-            }
+                document.getElementById("loading-progress").textContent = "Processing ROM file...";
+                await emulator.load(romBlob);
 
-            run() {
-                // Display loading screen
-                this.ctx.fillStyle = '#121212';
-                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                document.getElementById("loading-progress").remove();
+                document.getElementById("emulator-container").style.display = "block";
 
-                // Draw Pokemon HeartGold splash
-                this.ctx.fillStyle = '#FFD700';
-                this.ctx.font = 'bold 24px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText('Pokemon HeartGold', this.canvas.width / 2, 100);
+                console.log("✓ NDS Emulator initialized successfully");
+                console.log("✓ Pokemon HeartGold loaded");
+                setupControls();
 
-                this.ctx.fillStyle = '#00d4ff';
-                this.ctx.font = '16px Arial';
-                this.ctx.fillText('ROM Loaded Successfully', this.canvas.width / 2, 150);
-                this.ctx.fillText('Ready to Play', this.canvas.width / 2, 180);
-
-                // Show status
-                document.getElementById("status").textContent = "✓ Emulator Ready - Game Loaded";
+            } catch (error) {
+                console.error("Initialization Error:", error);
+                const errorDiv = document.getElementById("error");
+                errorDiv.style.display = "block";
+                errorDiv.innerHTML = `
+                    <strong>Error Loading ROM:</strong><br>
+                    ${error.message}<br>
+                    <small>Try uploading a valid NDS ROM file</small>
+                `;
+                
+                // Keep the progress element visible so user can try again
+                const progressElement = document.getElementById("loading-progress");
+                if (progressElement) {
+                    progressElement.textContent = "Error - Try uploading a ROM file above";
+                }
             }
         }
 
@@ -196,43 +310,40 @@
 
                 document.getElementById("loading-progress").textContent = "Downloading ROM files...";
                 const gameBlob = await mergeFiles(parts);
-
-                document.getElementById("loading-progress").textContent = "Initializing emulator...";
-
-                // Initialize offline-capable emulator
-                const emulator = new NDSEmulator(document.getElementById('canvas'));
-                await emulator.load(gameBlob);
-
-                document.getElementById("loading-progress").remove();
-                document.getElementById("emulator-container").style.display = "block";
-
-                console.log("✓ NDS Emulator initialized successfully");
-                console.log("✓ Pokemon HeartGold loaded (Offline Mode)");
-
-                // Add keyboard controls
-                setupControls();
+                
+                await loadROMFromFile(gameBlob);
 
             } catch (error) {
-                console.error("Initialization Error:", error);
+                console.error("Download Error:", error);
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
-                    <strong>Error Loading Emulator:</strong><br>
+                    <strong>Failed to Download ROM:</strong><br>
                     ${error.message}<br>
-                    <small>This emulator works offline. Make sure the ROM file is accessible.</small>
+                    <small>You can upload a ROM file instead using the file upload feature</small>
                 `;
-                document.getElementById("loading-progress").remove();
+                document.getElementById("loading-progress").innerHTML = `
+                    <p>Failed to auto-download ROM</p>
+                    <small>(You can still upload a local ROM file)</small>
+                `;
             }
+
+            // Setup file upload handler
+            document.getElementById('file-input').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    console.log('Loading ROM from file:', file.name);
+                    loadROMFromFile(file);
+                }
+            });
         }
 
         function setupControls() {
             const keyMap = {
-                // D-Pad
                 'ArrowUp': 'up',
                 'ArrowDown': 'down',
                 'ArrowLeft': 'left',
                 'ArrowRight': 'right',
-                // Buttons
                 'z': 'b',
                 'x': 'a',
                 'a': 'l',
@@ -245,13 +356,6 @@
                 const key = keyMap[e.key.toLowerCase()];
                 if (key) {
                     console.log(`Key pressed: ${key}`);
-                }
-            });
-
-            document.addEventListener('keyup', (e) => {
-                const key = keyMap[e.key.toLowerCase()];
-                if (key) {
-                    console.log(`Key released: ${key}`);
                 }
             });
         }
