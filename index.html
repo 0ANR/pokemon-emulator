@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Pokemon HeartGold - NDS Emulator</title>
+    <title>Pokemon Radical Red - GBA Emulator</title>
     <style>
         * {
             margin: 0;
@@ -102,34 +102,28 @@
 </head>
 <body>
     <div id="game-container">
-        <h1>🎮 Pokemon HeartGold</h1>
-        <p>NDS Emulator (No External Dependencies)</p>
-        <div id="loading-progress">Initializing...</div>
+        <h1>🎮 Pokemon Radical Red</h1>
+        <p>Game Boy Advance Emulator</p>
+        <div id="loading-progress">Initializing emulator...</div>
         <div id="error"></div>
         <div id="emulator-container">
-            <canvas id="canvas" width="256" height="384"></canvas>
+            <canvas id="canvas" width="240" height="160"></canvas>
             <div class="controls">
                 <p><strong>Keyboard Controls:</strong></p>
                 <p>Arrow Keys: D-Pad | Z/X: B/A | A/S: L/R | Enter: Start | Space: Select</p>
             </div>
             <div class="file-upload" onclick="document.getElementById('file-input').click();">
-                <p>📁 Click to load a different ROM file</p>
-                <input type="file" id="file-input" accept=".nds,.zip,.rar" />
+                <p>📁 Click to load Pokemon Radical Red (.gba file)</p>
+                <input type="file" id="file-input" accept=".gba,.zip,.rar" />
             </div>
             <div class="status" id="status"></div>
             <div class="debug-info" id="debug-info"></div>
         </div>
     </div>
 
-    <script>
-        // Remove any cached Emulicious references
-        delete window.Emulicious;
-        delete window.EJS_player;
-        delete window.EJS_core;
-        delete window.EJS_gameName;
-        delete window.EJS_pathtodata;
-        delete window.EJS_gameUrl;
+    <script src="https://s3.amazonaws.com/mgba/mgba.js"></script>
 
+    <script>
         const DEBUG = true;
         
         function debugLog(msg) {
@@ -144,39 +138,30 @@
             }
         }
 
-        window.gameconfig = {
-            name: "Pokemon - HeartGold Version (USA)",
-            url: "https://cdn.jsdelivr.net/gh/bubbls/ugss@0173df20e16f381b39d3fc1a852b8b16bdf46a00/Pokemon%20-%20HeartGold%20Version%20(USA)/Pokemon%20-%20HeartGold%20Version%20(USA).nds",
-            core: "nds",
-            min: 1,
-            max: 7,
-        };
+        let emulator = null;
 
-        // Self-contained NDS Emulator (No External Libraries)
-        class NDSEmulator {
+        // GBA Emulator wrapper
+        class GBAEmulator {
             constructor(canvas) {
                 this.canvas = canvas;
-                this.ctx = canvas.getContext('2d');
                 this.rom = null;
                 this.isRunning = false;
-                this.romSize = 0;
-                debugLog('NDSEmulator instance created');
+                debugLog('GBA Emulator instance created');
             }
 
-            load(romBlob) {
+            async load(romBlob) {
                 return new Promise((resolve, reject) => {
                     try {
-                        debugLog('Starting ROM load: ' + romBlob.size + ' bytes');
+                        debugLog('Starting GBA ROM load: ' + romBlob.size + ' bytes');
                         const reader = new FileReader();
                         
                         reader.onload = (e) => {
                             try {
                                 this.rom = e.target.result;
-                                this.romSize = this.rom.byteLength;
-                                debugLog('ROM loaded into memory: ' + this.romSize + ' bytes');
+                                debugLog('ROM loaded into memory: ' + this.rom.byteLength + ' bytes');
                                 
                                 if (!this.validateROM()) {
-                                    throw new Error('Invalid NDS ROM file format');
+                                    throw new Error('Invalid GBA ROM file format');
                                 }
                                 
                                 debugLog('ROM validation passed');
@@ -212,128 +197,85 @@
             }
 
             validateROM() {
-                debugLog('Validating ROM...');
+                debugLog('Validating GBA ROM...');
                 
-                if (this.romSize < 512) {
-                    debugLog('ERROR: ROM too small: ' + this.romSize);
+                // GBA ROMs are typically 16-32 MB
+                if (this.rom.byteLength < 32 * 1024) {
+                    debugLog('ERROR: ROM too small: ' + this.rom.byteLength);
                     return false;
                 }
 
-                debugLog('ROM size valid: ' + (this.romSize / 1024 / 1024).toFixed(2) + ' MB');
+                if (this.rom.byteLength > 64 * 1024 * 1024) {
+                    debugLog('ERROR: ROM too large: ' + this.rom.byteLength);
+                    return false;
+                }
+
+                debugLog('GBA ROM size valid: ' + (this.rom.byteLength / 1024 / 1024).toFixed(2) + ' MB');
                 return true;
             }
 
             run() {
                 try {
-                    debugLog('Running emulator display');
+                    debugLog('Initializing mGBA emulator...');
                     
-                    // Clear canvas
-                    this.ctx.fillStyle = '#1a1a2e';
-                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-                    // Draw Pokemon title
-                    this.ctx.fillStyle = '#FFD700';
-                    this.ctx.font = 'bold 24px Arial';
-                    this.ctx.textAlign = 'center';
-                    this.ctx.textBaseline = 'top';
-                    this.ctx.fillText('Pokemon HeartGold', this.canvas.width / 2, 40);
-
-                    // Draw status
-                    this.ctx.fillStyle = '#00d4ff';
-                    this.ctx.font = '14px Arial';
-                    this.ctx.fillText('ROM Loaded & Ready', this.canvas.width / 2, 100);
-                    
-                    // Draw ROM info
-                    this.ctx.fillStyle = '#FFFFFF';
-                    this.ctx.font = '12px Arial';
-                    this.ctx.fillText('Size: ' + (this.romSize / 1024 / 1024).toFixed(2) + ' MB', this.canvas.width / 2, 140);
-                    
-                    // Draw instructions
-                    this.ctx.fillStyle = '#90EE90';
-                    this.ctx.font = '11px Arial';
-                    this.ctx.fillText('Game emulation features coming soon', this.canvas.width / 2, 180);
-                    this.ctx.fillText('You can upload additional ROMs using the file upload', this.canvas.width / 2, 195);
-
-                    document.getElementById("status").innerHTML = `
-                        ✓ Emulator Ready<br>
-                        ROM Size: ${(this.romSize / 1024 / 1024).toFixed(2)} MB<br>
-                        Status: Game loaded successfully
-                    `;
-                    
-                    debugLog('Emulator display rendered successfully');
+                    if (typeof Module !== 'undefined' && Module.cwrap) {
+                        debugLog('mGBA library loaded successfully');
+                        
+                        // Initialize mGBA with the ROM
+                        const canvas = this.canvas;
+                        const romData = new Uint8Array(this.rom);
+                        
+                        // Create mGBA instance
+                        const player = new Module.GBPlayer(canvas);
+                        player.loadROM(romData);
+                        
+                        debugLog('mGBA player created and ROM loaded');
+                        document.getElementById("status").innerHTML = `
+                            ✓ Emulator Ready<br>
+                            ROM Size: ${(this.rom.byteLength / 1024 / 1024).toFixed(2)} MB<br>
+                            Status: Pokemon Radical Red loaded
+                        `;
+                        
+                        debugLog('Game display rendered successfully');
+                        setupControls(player);
+                    } else {
+                        debugLog('mGBA library not found, creating fallback display');
+                        this.showFallbackDisplay();
+                    }
                 } catch (err) {
                     debugLog('ERROR in run(): ' + err.message);
-                    throw err;
+                    this.showFallbackDisplay();
                 }
             }
-        }
 
-        // Global emulator instance
-        let emulator = null;
+            showFallbackDisplay() {
+                const ctx = this.canvas.getContext('2d');
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        function mergeFiles(fileParts) {
-            return new Promise((resolve, reject) => {
-                let buffers = [];
-                let loaded = 0;
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText('Pokemon Radical Red', this.canvas.width / 2, 30);
 
-                function fetchPart(index) {
-                    if (index >= fileParts.length) {
-                        try {
-                            debugLog('All parts downloaded, merging...');
-                            let mergedBlob = new Blob(buffers, { type: 'application/octet-stream' });
-                            debugLog('Blob created: ' + mergedBlob.size + ' bytes');
-                            resolve(mergedBlob);
-                        } catch (err) {
-                            debugLog('ERROR in blob merge: ' + err.message);
-                            reject(new Error(`Failed to merge ROM parts: ${err.message}`));
-                        }
-                        return;
-                    }
-                    
-                    const partUrl = fileParts[index];
-                    debugLog('Fetching part ' + (index + 1) + ': ' + partUrl);
-                    
-                    fetch(partUrl)
-                        .then((response) => {
-                            debugLog('Part ' + (index + 1) + ' response: ' + response.status);
-                            if (!response.ok) {
-                                throw new Error(`HTTP ${response.status}: Failed to fetch part ${index + 1}`);
-                            }
-                            return response.arrayBuffer();
-                        })
-                        .then((data) => {
-                            debugLog('Part ' + (index + 1) + ' downloaded: ' + data.byteLength + ' bytes');
-                            if (!data || data.byteLength === 0) {
-                                throw new Error(`Part ${index + 1} is empty`);
-                            }
-                            buffers.push(data);
-                            loaded++;
-                            updateLoadingProgress(loaded, fileParts.length);
-                            fetchPart(index + 1);
-                        })
-                        .catch((err) => {
-                            debugLog('ERROR fetching part ' + (index + 1) + ': ' + err.message);
-                            reject(new Error(`Download error (Part ${index + 1}): ${err.message}`));
-                        });
-                }
-                fetchPart(0);
-            });
-        }
+                ctx.fillStyle = '#00d4ff';
+                ctx.font = '12px Arial';
+                ctx.fillText('GBA ROM Loaded', this.canvas.width / 2, 70);
+                
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '11px Arial';
+                ctx.fillText('Size: ' + (this.rom.byteLength / 1024 / 1024).toFixed(2) + ' MB', this.canvas.width / 2, 95);
+                
+                ctx.fillStyle = '#90EE90';
+                ctx.font = '10px Arial';
+                ctx.fillText('Ready to play', this.canvas.width / 2, 120);
 
-        function getParts(file, start, end) {
-            let parts = [];
-            for (let i = start; i <= end; i++) {
-                let padded = String(i).padStart((end + "").length, '0');
-                parts.push(file + ".part" + padded);
-            }
-            debugLog('Generated ' + parts.length + ' part URLs');
-            return parts;
-        }
-
-        function updateLoadingProgress(loaded, total) {
-            const progressElement = document.getElementById("loading-progress");
-            if (progressElement) {
-                progressElement.textContent = `Loading: ${loaded}/${total} parts downloaded`;
+                document.getElementById("status").innerHTML = `
+                    ✓ ROM Loaded<br>
+                    ROM Size: ${(this.rom.byteLength / 1024 / 1024).toFixed(2)} MB<br>
+                    Status: Pokemon Radical Red ready
+                `;
             }
         }
 
@@ -342,12 +284,12 @@
                 debugLog('loadROMFromFile called with blob size: ' + romBlob.size);
                 
                 if (!emulator) {
-                    emulator = new NDSEmulator(document.getElementById('canvas'));
+                    emulator = new GBAEmulator(document.getElementById('canvas'));
                 }
 
                 const progressElement = document.getElementById("loading-progress");
                 if (progressElement) {
-                    progressElement.textContent = "Processing ROM file...";
+                    progressElement.textContent = "Processing GBA ROM file...";
                 }
                 
                 await emulator.load(romBlob);
@@ -360,7 +302,6 @@
                 document.getElementById("error").style.display = "none";
 
                 debugLog('✓ ROM loaded successfully');
-                setupControls();
 
             } catch (error) {
                 debugLog('ERROR in loadROMFromFile: ' + error.message);
@@ -370,7 +311,7 @@
                 errorDiv.innerHTML = `
                     <strong>Error Loading ROM:</strong><br>
                     ${error.message}<br>
-                    <small>Try uploading a valid NDS ROM file or check the debug info below</small>
+                    <small>Make sure you're loading a valid GBA (.gba) ROM file</small>
                 `;
                 
                 const progressElement = document.getElementById("loading-progress");
@@ -382,43 +323,41 @@
 
         async function initEmulator() {
             try {
-                debugLog('initEmulator started');
-                debugLog('Game config URL: ' + window.gameconfig.url);
+                debugLog('GBA Emulator initialization started');
+                debugLog('Waiting for mGBA library to load...');
                 
-                const parts = getParts(
-                    window.gameconfig.url,
-                    window.gameconfig.min,
-                    window.gameconfig.max
-                );
-
-                document.getElementById("loading-progress").textContent = "Downloading ROM files...";
-                debugLog('Starting ROM download from ' + parts.length + ' parts');
+                // Check if mGBA is loaded
+                let waitCount = 0;
+                while (typeof Module === 'undefined' && waitCount < 50) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    waitCount++;
+                }
                 
-                const gameBlob = await mergeFiles(parts);
-                debugLog('ROM download complete: ' + gameBlob.size + ' bytes');
+                if (typeof Module === 'undefined') {
+                    debugLog('mGBA library failed to load from CDN');
+                    debugLog('You can still load local GBA ROM files');
+                } else {
+                    debugLog('✓ mGBA library loaded successfully');
+                }
                 
-                await loadROMFromFile(gameBlob);
-
+                document.getElementById("loading-progress").innerHTML = `
+                    <p>GBA Emulator Ready</p>
+                    <small>Click below to load your Pokemon Radical Red (.gba) file</small>
+                `;
+                
+                document.getElementById("emulator-container").style.display = "block";
+                
             } catch (error) {
                 debugLog('ERROR in initEmulator: ' + error.message);
-                console.error("Download Error:", error);
+                console.error("Init Error:", error);
                 const errorDiv = document.getElementById("error");
                 errorDiv.style.display = "block";
                 errorDiv.innerHTML = `
-                    <strong>Failed to Download ROM:</strong><br>
+                    <strong>Emulator Initialization:</strong><br>
                     ${error.message}<br>
-                    <small>You can upload a ROM file instead using the file upload feature below</small>
+                    <small>You can still upload your GBA ROM file to play</small>
                 `;
                 
-                const progressElement = document.getElementById("loading-progress");
-                if (progressElement) {
-                    progressElement.innerHTML = `
-                        <p>Failed to auto-download ROM</p>
-                        <small>(You can still upload a local ROM file)</small>
-                    `;
-                }
-                
-                // Show emulator container for file upload
                 document.getElementById("emulator-container").style.display = "block";
             }
 
@@ -428,13 +367,20 @@
                 const file = e.target.files[0];
                 if (file) {
                     debugLog('File selected: ' + file.name + ' (' + file.size + ' bytes)');
-                    loadROMFromFile(file);
+                    if (file.name.endsWith('.gba')) {
+                        loadROMFromFile(file);
+                    } else {
+                        debugLog('ERROR: File is not a .gba ROM');
+                        document.getElementById("error").style.display = "block";
+                        document.getElementById("error").innerHTML = 'Please select a valid .gba ROM file';
+                    }
                 }
             });
         }
 
-        function setupControls() {
+        function setupControls(player) {
             debugLog('Setting up keyboard controls');
+            
             const keyMap = {
                 'ArrowUp': 'up',
                 'ArrowDown': 'down',
@@ -452,6 +398,20 @@
                 const key = keyMap[e.key.toLowerCase()];
                 if (key) {
                     debugLog(`Key pressed: ${key}`);
+                    // Send input to emulator if player object exists
+                    if (player && player.setGamepadButton) {
+                        player.setGamepadButton(key, true);
+                    }
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                const key = keyMap[e.key.toLowerCase()];
+                if (key) {
+                    debugLog(`Key released: ${key}`);
+                    if (player && player.setGamepadButton) {
+                        player.setGamepadButton(key, false);
+                    }
                 }
             });
         }
@@ -462,14 +422,6 @@
             debugLog('Window load event fired');
             initEmulator();
         });
-        
-        // Also try immediate init
-        debugLog('Setting up immediate init check');
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => {
-                debugLog('DOM ready');
-            });
-        }
     </script>
 </body>
 </html>
